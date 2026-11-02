@@ -1,0 +1,51 @@
+:root{--ink:#1b2430;--muted:#5b6675;--line:#d9dee5;--bg:#f6f8fb;--card:#fff;--blue:#1f3864;--blue2:#2f5496;--hl:#fff2cc;--bad:#b3261e;--ok:#1e7a46}
+@media (prefers-color-scheme:dark){:root{--ink:#e8edf3;--muted:#9aa6b5;--line:#2b3644;--bg:#11161d;--card:#18202a;--blue:#9db8ea;--blue2:#7fa0dd;--hl:#4a4020;--bad:#ff8a80;--ok:#6fd49a}}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.5 Calibri,Carlito,system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+#app{max-width:1100px;margin:0 auto;padding:0 16px 48px}
+header.top{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:16px 0;border-bottom:1px solid var(--line);margin-bottom:20px;flex-wrap:wrap}
+header.top h1{font-size:22px;margin:0;color:var(--blue)}
+h2{color:var(--blue);font-size:19px;margin:0 0 10px}
+h3{color:var(--blue2);font-size:16px;margin:16px 0 6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+.muted{color:var(--muted)}.small{font-size:14px}
+label{display:block;font-weight:600;margin:12px 0 4px}
+label .hint{font-weight:400;color:var(--muted)}
+input,select,textarea{width:100%;font:inherit;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+textarea{min-height:84px;resize:vertical}
+input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible{outline:2px solid var(--blue2);outline-offset:1px}
+button{font:inherit;cursor:pointer;border:1px solid var(--blue);background:var(--blue);color:#fff;border-radius:8px;padding:7px 14px}
+@media (prefers-color-scheme:dark){button{color:#11161d}}
+button.ghost{background:transparent;color:var(--blue)}
+button.danger{border-color:var(--bad);background:transparent;color:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+@media (max-width:700px){.grid2{grid-template-columns:1fr}}
+.tabs{display:flex;gap:6px;margin-bottom:16px}
+.tabs button{background:transparent;color:var(--blue);border-color:var(--line)}
+.tabs button[aria-current=page]{background:var(--blue);color:#fff;border-color:var(--blue)}
+@media (prefers-color-scheme:dark){.tabs button[aria-current=page]{color:#11161d}}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--blue);white-space:nowrap}
+td.clip{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill{display:inline-block;border-radius:99px;padding:1px 10px;font-size:13px;border:1px solid var(--line)}
+.pill.stuck{background:var(--hl);border-color:var(--hl);font-weight:600}
+.pill.on_track{color:var(--ok);border-color:var(--ok)}
+.flag{color:var(--bad);font-size:13px;display:block}
+.note{border-left:3px solid var(--blue2);padding:4px 12px;margin:12px 0}
+.note pre{white-space:pre-wrap;font:inherit;margin:2px 0 8px}
+.comment{background:var(--hl);border-radius:8px;padding:6px 10px;margin:6px 0}
+.hintbox{background:var(--hl);border-radius:8px;padding:8px 12px;margin:8px 0}
+.link{background:none;border:none;color:var(--blue2);padding:0;text-decoration:underline}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);max-width:90vw;background:var(--blue);color:#fff;padding:10px 16px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .2s}
+@media (prefers-color-scheme:dark){#toast{color:#11161d}}
+#toast.show{opacity:1}#toast.err{background:var(--bad)}
+.nowrap{white-space:nowrap}
+.chip{display:inline-block;width:20px;height:20px;line-height:18px;text-align:center;font-size:11px;font-weight:700;border-radius:4px;margin-right:2px;border:1px solid var(--line);color:var(--muted)}
+.chip.in_progress{background:var(--hl);border-color:var(--hl);color:var(--ink)}
+.chip.with_supervisor{background:var(--blue2);border-color:var(--blue2);color:#fff}
+.chip.done{background:var(--ok);border-color:var(--ok);color:#fff}
+input[type=checkbox]{width:auto}
