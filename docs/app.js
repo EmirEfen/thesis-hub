@@ -12,6 +12,7 @@ const SSTATE = { not_started: 'Not started', in_progress: 'In progress', with_su
 const REMINDERS = { note: 'Meeting note reminder', snapshot: 'Complete thesis overview', checkin: 'Check-in (no update)' };
 const SUPERVISOR = C.SUPERVISOR_NAME || 'Your supervisor';
 const SITE = location.origin + location.pathname;
+const SPECS = ['Strategic marketing', 'HDS', 'Supply-Chain', 'HFIM'];
 const STALE_DAYS = 30; // flag students with no meeting note for this long
 
 // ---------- helpers (all text goes through textContent, never innerHTML) ----------
@@ -145,11 +146,16 @@ async function studentView(stu, email) {
     e.preventDefault();
     const d = formData(thesisForm);
     run(thesisForm.querySelector('button'), async () => {
-      must(await sb.from('thesis_info').upsert({ student_id: stu.id, ...d, status: d.status || null }, { onConflict: 'student_id' }));
+      must(await sb.from('thesis_info').upsert({ student_id: stu.id, ...d, specialization: d.specialization || null, status: d.status || null }, { onConflict: 'student_id' }));
       toast('Saved');
     });
   } },
-    field('Working title', 'title', i.title, { max: 300 }),
+    h('label', {}, 'Specialization'),
+    h('select', { name: 'specialization' }, h('option', { value: '' }, 'Choose…'),
+      SPECS.map((v) => h('option', { value: v, selected: i.specialization === v }, v))),
+    field('Thesis snapshot', 'snapshot', i.snapshot, { rows: 4, max: 1000,
+      hint: '(2–3 sentences: your question, what or who you study, and how)' }),
+    h('p', { class: 'muted small' }, 'Example: "Does a sustainability label on coffee packaging raise willingness to pay? Online experiment (about 200 participants), label vs no label, moderated by prior attitude to sustainability."'),
     field('Design', 'design', i.design, { max: 300, hint: '(e.g., 2x2 between-subject, control vs treatment with pre/post)' }),
     h('div', { class: 'grid2' },
       field('Independent variable(s)', 'iv', i.iv, { rows: 2, max: 500 }),
@@ -233,7 +239,7 @@ function flagsFor(s) {
   const t = s.thesis_info || {};
   const out = [];
   if (!s.invited_at) out.push('Not invited yet');
-  if (!t.title || !t.iv || !t.dv) out.push('Snapshot incomplete');
+  if (!t.specialization || !t.snapshot || !t.iv || !t.dv) out.push('Snapshot incomplete');
   const waiting = (s.section_progress || []).filter((p) => p.state === 'with_supervisor')
     .map((p) => SECTIONS.find((x) => x[0] === p.section)[1]);
   if (waiting.length) out.push('Draft waiting: ' + waiting.join(', '));
@@ -245,7 +251,7 @@ function flagsFor(s) {
 // Which students a reminder type applies to when you click "Select matching"
 const KIND_MATCH = {
   note: () => true,
-  snapshot: (r) => !r.t.title || !r.t.iv || !r.t.dv,
+  snapshot: (r) => !r.t.specialization || !r.t.snapshot || !r.t.iv || !r.t.dv,
   checkin: (r) => !r.lastDate || daysSince(r.lastDate) > STALE_DAYS,
 };
 async function fnError(error) {
@@ -261,7 +267,7 @@ function reminderMessage(kind, list, extra) {
     text = `${greet}\n\nPlease fill in your meeting note at least one day before our next meeting:\n${SITE}\n\nIt takes about five minutes: what you did, what I should look at, your questions, and what you will do next.\n${tail}`;
   } else if (kind === 'snapshot') {
     const t = one ? list[0].t : {};
-    const missing = one ? [!t.title && 'title', !t.iv && 'IV', !t.dv && 'DV'].filter(Boolean) : [];
+    const missing = one ? [!t.specialization && 'specialization', !t.snapshot && 'snapshot', !t.iv && 'IV', !t.dv && 'DV'].filter(Boolean) : [];
     subject = 'Thesis: please complete your overview';
     text = `${greet}\n\nYour thesis overview is not complete yet${missing.length ? ` (missing: ${missing.join(', ')})` : ''}. Please fill it in here:\n${SITE}\n\nI use it to prepare for our meetings.\n${tail}`;
   } else {
@@ -291,8 +297,8 @@ async function adminOverview(intakeId) {
   rows.sort((a, b) => rank(a) - rank(b) || a.s.name.localeCompare(b.s.name));
 
   const exportCsv = () => {
-    const head = ['Name', 'Email', 'Title', 'Design', 'IV', 'DV', 'Moderator', 'Mediator', 'Other', 'Help needed', 'Help note', ...SECTIONS.map((x) => x[1]), 'Last note'];
-    const lines = [head, ...rows.map((r) => [r.s.name, r.s.email, r.t.title, r.t.design, r.t.iv, r.t.dv, r.t.moderator, r.t.mediator, r.t.other_variables,
+    const head = ['Name', 'Email', 'Specialization', 'Snapshot', 'Design', 'IV', 'DV', 'Moderator', 'Mediator', 'Other', 'Help needed', 'Help note', ...SECTIONS.map((x) => x[1]), 'Last note'];
+    const lines = [head, ...rows.map((r) => [r.s.name, r.s.email, r.t.specialization, r.t.snapshot, r.t.design, r.t.iv, r.t.dv, r.t.moderator, r.t.mediator, r.t.other_variables,
       STATUS[r.t.status] || '', r.t.status_note, ...SECTIONS.map(([k]) => SSTATE[(r.s.section_progress || []).find((p) => p.section === k)?.state || 'not_started']), r.lastDate])];
     const blob = new Blob(['﻿' + lines.map((l) => l.map(csvCell).join(',')).join('\n')], { type: 'text/csv' });
     const a = h('a', { href: URL.createObjectURL(blob), download: 'thesis-overview.csv' }); a.click(); URL.revokeObjectURL(a.href);
@@ -322,16 +328,16 @@ async function adminOverview(intakeId) {
       }) }, '3. Mark as sent')),
     h('p', { class: 'muted small' }, 'Tick students (or "Select matching": note = everyone; overview = incomplete snapshot; check-in = no note for 30+ days). Paste the emails into BCC in your mail app, paste the message, send, then click "Mark as sent".'));
 
-  const clip = (v) => h('td', { class: 'clip', title: v || '' }, v || '–');
+  const clip = (v, extraClass) => h('td', { class: 'clip' + (extraClass ? ' ' + extraClass : ''), tabindex: v ? '0' : null }, v || '–');
   const table = students.length ? h('div', { class: 'tablewrap' }, h('table', {},
-    h('thead', {}, h('tr', {}, h('th', {}), ['Student', 'Title', 'IV', 'DV', 'Moderator', 'Mediator', 'Progress', 'Help', 'Last note', 'Flags'].map((x) => h('th', {}, x)))),
+    h('thead', {}, h('tr', {}, h('th', {}), ['Student', 'Spec.', 'Snapshot', 'IV', 'DV', 'Moderator', 'Mediator', 'Progress', 'Help', 'Last note', 'Flags'].map((x) => h('th', {}, x)))),
     h('tbody', {}, rows.map((r) => {
       const box = h('input', { type: 'checkbox', 'aria-label': 'Select ' + r.s.name, style: 'width:auto', onchange: (e) => { e.target.checked ? sel.add(r.s.id) : sel.delete(r.s.id); refresh(); } });
       box.dataset.id = r.s.id; boxes.push(box);
       const lr = lastRem[r.s.id];
       return h('tr', {}, h('td', {}, box),
         h('td', {}, h('button', { class: 'link', onclick: () => adminDetail(r.s.id) }, r.s.name)),
-        clip(r.t.title), clip(r.t.iv), clip(r.t.dv), clip(r.t.moderator), clip(r.t.mediator),
+        clip(r.t.specialization, 'spec'), clip(r.t.snapshot, 'wide'), clip(r.t.iv), clip(r.t.dv), clip(r.t.moderator), clip(r.t.mediator),
         h('td', { class: 'nowrap' }, progressCells(r.s)),
         h('td', {}, r.t.status && r.t.status !== 'on_track' ? h('span', { class: 'pill ' + r.t.status }, STATUS[r.t.status]) : '–'),
         h('td', {}, fmtDate(r.lastDate)),
@@ -358,7 +364,7 @@ async function adminDetail(studentId) {
   mount(topbar(session.user.email, h('button', { class: 'ghost', onclick: () => route() }, '← Back')),
     h('div', { class: 'card' }, h('h2', {}, s.name), h('p', { class: 'muted small' }, s.email),
       h('table', {}, h('tbody', {},
-        row('Title', t.title), row('Design', t.design), row('IV', t.iv), row('DV', t.dv),
+        row('Specialization', t.specialization), row('Snapshot', t.snapshot), row('Design', t.design), row('IV', t.iv), row('DV', t.dv),
         row('Moderator', t.moderator), row('Mediator', t.mediator), row('Other', t.other_variables),
         row('Help needed', t.status ? STATUS[t.status] : ''), row('Help note', t.status_note), row('Updated', fmtDate(t.updated_at)))),
       h('div', { class: 'row', style: 'margin-top:12px' }, kindSel,

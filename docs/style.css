@@ -30,7 +30,10 @@ button:disabled{opacity:.5;cursor:default}
 table{border-collapse:collapse;width:100%;font-size:14px}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
 th{color:var(--blue);white-space:nowrap}
-td.clip{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+td.clip{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
+td.clip.wide{max-width:260px}
+td.clip.spec{max-width:110px}
+td.clip:hover,td.clip:focus{max-width:420px;min-width:260px;white-space:pre-wrap;overflow:visible;text-overflow:clip;background:#fffbe6;outline:1px solid #e6d98a}
 .pill{display:inline-block;border-radius:99px;padding:1px 10px;font-size:13px;border:1px solid var(--line)}
 .pill.stuck{background:var(--hl);border-color:var(--hl);font-weight:600}
 .pill.on_track{color:var(--ok);border-color:var(--ok)}
