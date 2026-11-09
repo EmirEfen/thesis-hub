@@ -2,7 +2,7 @@
 'use strict';
 const C = window.CONFIG;
 const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY, {
-  auth: { persistSession: true, detectSessionInUrl: true },
+  auth: { persistSession: true, detectSessionInUrl: false },
 });
 const app = document.getElementById('app');
 const STATUS = { on_track: 'No issues', stuck: 'Stuck', waiting_on_supervisor: 'Waiting on supervisor' };
@@ -10,6 +10,8 @@ const SECTIONS = [['introduction', 'Introduction', 'I'], ['literature_review', '
   ['data_collection', 'Data collection', 'D'], ['results', 'Results', 'R'], ['general_discussion', 'General discussion', 'G']];
 const SSTATE = { not_started: 'Not started', in_progress: 'In progress', with_supervisor: 'Draft with supervisor', done: 'Done' };
 const REMINDERS = { note: 'Meeting note reminder', snapshot: 'Complete thesis overview', checkin: 'Check-in (no update)' };
+const SUPERVISOR = C.SUPERVISOR_NAME || 'Your supervisor';
+const SITE = location.origin + location.pathname;
 const STALE_DAYS = 30; // flag students with no meeting note for this long
 
 // ---------- helpers (all text goes through textContent, never innerHTML) ----------
@@ -69,41 +71,43 @@ function topbar(email, extra) {
 }
 
 // ---------- login ----------
-// Two ways in: click the link in the email, or type the 6-digit code from the same email.
-// The code helps when a university mail filter "clicks" links before the student does.
 function loginView(msg) {
-  const emailForm = h('form', { onsubmit: (e) => {
+  const form = h('form', { onsubmit: (e) => {
     e.preventDefault();
-    const email = String(new FormData(emailForm).get('email')).trim();
-    run(emailForm.querySelector('button'), async () => {
-      // shouldCreateUser:false -> only people you registered can get a link
-      const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } });
-      if (error && !/not allowed|not found|signups|user/i.test(error.message)) throw error;
-      toast('If this email is registered, a login email is on its way.');
-      showCode(email);
+    const fd = new FormData(form);
+    run(form.querySelector('button'), async () => {
+      const { error } = await sb.auth.signInWithPassword({ email: String(fd.get('email')).trim().toLowerCase(), password: String(fd.get('password')) });
+      if (error) throw new Error('Wrong email or password. Ask your supervisor for a new password.');
     });
   } },
     field('Email', 'email', '', { type: 'email', required: true, max: 200 }),
-    h('p', {}, h('button', { type: 'submit' }, 'Email me a login link')));
-  const codeBox = h('div');
-  function showCode(email) {
-    const form = h('form', { onsubmit: (e) => {
-      e.preventDefault();
-      const token = String(new FormData(form).get('token')).replace(/\s/g, '');
-      run(form.querySelector('button'), async () => {
-        const { error } = await sb.auth.verifyOtp({ email, token, type: 'email' });
-        if (error) throw new Error('That code did not work. Request a new one.');
-      });
-    } },
-      h('p', { class: 'muted small' }, 'Click the link in the email, or type the 6-digit code from it here:'),
-      field('Code', 'token', '', { max: 10, required: true }),
-      h('p', {}, h('button', { type: 'submit' }, 'Log in')));
-    codeBox.replaceChildren(form);
-  }
+    field('Password', 'password', '', { type: 'password', required: true, max: 200 }),
+    h('p', {}, h('button', { type: 'submit' }, 'Log in')));
+  form.querySelector('[name=email]').setAttribute('autocomplete', 'username');
+  form.querySelector('[name=password]').setAttribute('autocomplete', 'current-password');
   mount(h('header', { class: 'top' }, h('h1', {}, 'Thesis Hub')),
     h('div', { class: 'card' }, h('h2', {}, 'Log in'),
-      h('p', { class: 'muted' }, 'Use the email address your supervisor registered. No password needed.'),
-      msg ? h('p', { class: 'hintbox' }, msg) : null, emailForm, codeBox));
+      h('p', { class: 'muted' }, 'Use the email address and password your supervisor gave you. Forgot it? Ask for a new one.'),
+      msg ? h('p', { class: 'hintbox' }, msg) : null, form));
+}
+
+function passwordCard() {
+  const form = h('form', { onsubmit: (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const a = String(fd.get('pw1')), b = String(fd.get('pw2'));
+    run(form.querySelector('button'), async () => {
+      if (a.length < 10) throw new Error('Use at least 10 characters.');
+      if (a !== b) throw new Error('The two passwords do not match.');
+      must(await sb.auth.updateUser({ password: a }));
+      form.reset(); toast('Password changed');
+    });
+  } },
+    field('New password', 'pw1', '', { type: 'password', required: true, max: 200, hint: '(at least 10 characters)' }),
+    field('New password again', 'pw2', '', { type: 'password', required: true, max: 200 }),
+    h('p', {}, h('button', { type: 'submit' }, 'Change password')));
+  form.querySelectorAll('input').forEach((i) => i.setAttribute('autocomplete', 'new-password'));
+  return h('div', { class: 'card' }, h('h2', {}, 'Change password'), form);
 }
 
 function progressEditor(studentId, rows, onSaved) {
@@ -186,7 +190,8 @@ async function studentView(stu, email) {
     h('div', { class: 'card' }, h('h2', {}, 'New meeting note'),
       h('p', { class: 'muted small' }, 'Fill this in at least one day before the meeting.'), noteForm),
     h('div', { class: 'card' }, h('h2', {}, 'Past notes'),
-      notes.length ? notes.map((n) => noteBlock(n, false)) : h('p', { class: 'muted' }, 'No notes yet.')));
+      notes.length ? notes.map((n) => noteBlock(n, false)) : h('p', { class: 'muted' }, 'No notes yet.')),
+    passwordCard());
 }
 
 function noteBlock(n, isAdmin, reload) {
@@ -216,11 +221,11 @@ async function adminView(email) {
   const intakes = must(await sb.from('intakes').select('*').order('year', { ascending: false }).order('defense'));
   if (!selectedIntake || !intakes.some((x) => x.id === selectedIntake)) selectedIntake = intakes[0]?.id || null;
   const tabs = h('div', { class: 'tabs' },
-    ['overview', 'manage'].map((t) => h('button', { 'aria-current': adminTab === t ? 'page' : null, onclick: () => { adminTab = t; route(); } },
-      t === 'overview' ? 'Overview' : 'Intakes & students')));
+    ['overview', 'manage', 'account'].map((t) => h('button', { 'aria-current': adminTab === t ? 'page' : null, onclick: () => { adminTab = t; route(); } },
+      { overview: 'Overview', manage: 'Intakes & students', account: 'My password' }[t])));
   const picker = intakes.length ? h('select', { 'aria-label': 'Intake', style: 'width:auto', onchange: (e) => { selectedIntake = e.target.value; route(); } },
     intakes.map((x) => h('option', { value: x.id, selected: x.id === selectedIntake }, x.label))) : null;
-  const body = adminTab === 'overview' ? await adminOverview(selectedIntake) : await adminManage(intakes);
+  const body = adminTab === 'overview' ? await adminOverview(selectedIntake) : adminTab === 'manage' ? await adminManage(intakes) : passwordCard();
   mount(topbar(email, picker), tabs, body);
 }
 
@@ -246,13 +251,28 @@ const KIND_MATCH = {
 async function fnError(error) {
   try { const j = await error.context.json(); return j.error || error.message; } catch { return error.message; }
 }
-async function sendReminders(kind, ids, extra) {
-  const { data, error } = await sb.functions.invoke('remind', { body: { kind, student_ids: ids, extra } });
-  if (error) throw new Error(await fnError(error));
-  const c = { sent: 0, skipped: 0, failed: 0 };
-  (data.results || []).forEach((r) => { c[r.status]++; });
-  const firstBad = (data.results || []).find((r) => r.status !== 'sent');
-  toast(`Sent ${c.sent}` + (c.skipped ? `, skipped ${c.skipped}` : '') + (c.failed ? `, failed ${c.failed}` : '') + (firstBad ? ` (${firstBad.name}: ${firstBad.detail})` : ''), c.failed > 0);
+function reminderMessage(kind, list, extra) {
+  const one = list.length === 1;
+  const greet = one ? `Hi ${list[0].s.name.split(/\s+/)[0]},` : 'Hi all,';
+  const tail = (extra ? `\n${extra}\n` : '') + `\nBest,\n${SUPERVISOR}`;
+  let subject, text;
+  if (kind === 'note') {
+    subject = 'Thesis meeting: please fill in your meeting note';
+    text = `${greet}\n\nPlease fill in your meeting note at least one day before our next meeting:\n${SITE}\n\nIt takes about five minutes: what you did, what I should look at, your questions, and what you will do next.\n${tail}`;
+  } else if (kind === 'snapshot') {
+    const t = one ? list[0].t : {};
+    const missing = one ? [!t.title && 'title', !t.iv && 'IV', !t.dv && 'DV'].filter(Boolean) : [];
+    subject = 'Thesis: please complete your overview';
+    text = `${greet}\n\nYour thesis overview is not complete yet${missing.length ? ` (missing: ${missing.join(', ')})` : ''}. Please fill it in here:\n${SITE}\n\nI use it to prepare for our meetings.\n${tail}`;
+  } else {
+    subject = 'Thesis: checking in';
+    text = `${greet}\n\nI have not seen an update from you in a while. Please update your progress and add a meeting note here:\n${SITE}\n\nTo book a meeting, use the MEET ME link in my email signature. Meeting is up to you; I will not remind you again about it.\n${tail}`;
+  }
+  return `Subject: ${subject}\n\n${text}`;
+}
+let lastLogins = null; // passwords from the latest create/reset; kept in memory only
+function loginMessage(r) {
+  return `Hi ${r.name.split(/\s+/)[0]},\n\nYour login for the Thesis Hub:\n${SITE}\nEmail: ${r.email}\nPassword: ${r.password}\n\nPlease change your password after your first login (card at the bottom of the page) and keep it to yourself.\n\nBest,\n${SUPERVISOR}`;
 }
 const chip = (section, state) => {
   const [, label, ab] = SECTIONS.find((x) => x[0] === section);
@@ -278,23 +298,29 @@ async function adminOverview(intakeId) {
     const a = h('a', { href: URL.createObjectURL(blob), download: 'thesis-overview.csv' }); a.click(); URL.revokeObjectURL(a.href);
   };
 
-  // --- reminders bar ---
+  // --- reminders bar: you copy the text and send it from your own mail ---
   const sel = new Set();
   const boxes = [];
   const kindSel = h('select', { 'aria-label': 'Reminder type', style: 'width:auto' }, Object.entries(REMINDERS).map(([k, l]) => h('option', { value: k }, l)));
   const extra = h('input', { maxlength: 300, placeholder: 'Optional extra line, e.g. "Our meeting is on 12 Nov"', 'aria-label': 'Extra line', style: 'flex:1;min-width:220px' });
-  const sendBtn = h('button', { onclick: (e) => run(e.target, async () => {
-    const kind = kindSel.value;
-    if (!confirm(`Send "${REMINDERS[kind]}" to ${sel.size} student(s)?`)) return;
-    await sendReminders(kind, [...sel], extra.value.trim()); await route();
-  }) }, '');
-  const refresh = () => { sendBtn.textContent = `Send to selected (${sel.size})`; sendBtn.disabled = sel.size === 0; boxes.forEach((b) => { b.checked = sel.has(b.dataset.id); }); };
-  const reminderBar = h('div', { class: 'card' }, h('h2', {}, 'Send reminders'),
+  const countEl = h('span', { class: 'muted small' }, '');
+  const chosen = () => rows.filter((r) => sel.has(r.s.id));
+  const needSel = () => { if (!sel.size) { toast('Tick at least one student', true); return false; } return true; };
+  const refresh = () => { countEl.textContent = `${sel.size} selected`; boxes.forEach((b) => { b.checked = sel.has(b.dataset.id); }); };
+  const reminderBar = h('div', { class: 'card' }, h('h2', {}, 'Reminders'),
     h('div', { class: 'row' }, kindSel, extra),
     h('div', { class: 'row', style: 'margin-top:10px' },
       h('button', { class: 'ghost', onclick: () => { sel.clear(); rows.filter((r) => r.s.invited_at && KIND_MATCH[kindSel.value](r)).forEach((r) => sel.add(r.s.id)); refresh(); } }, 'Select matching'),
-      h('button', { class: 'ghost', onclick: () => { sel.clear(); refresh(); } }, 'Clear'), sendBtn),
-    h('p', { class: 'muted small' }, 'Tick students in the table, or use "Select matching" (meeting note: everyone; overview: incomplete snapshot; check-in: no note for 30+ days). The same type is never sent to the same student twice within 3 days.'));
+      h('button', { class: 'ghost', onclick: () => { sel.clear(); refresh(); } }, 'Clear'), countEl),
+    h('div', { class: 'row', style: 'margin-top:10px' },
+      h('button', { class: 'ghost', onclick: () => { if (needSel()) copy(chosen().map((r) => r.s.email).join('; ')); } }, '1. Copy emails'),
+      h('button', { onclick: () => { if (needSel()) copy(reminderMessage(kindSel.value, chosen(), extra.value.trim())); } }, '2. Copy message'),
+      h('button', { class: 'ghost', onclick: (e) => run(e.target, async () => {
+        if (!needSel()) return;
+        must(await sb.from('reminders_log').insert(chosen().map((r) => ({ student_id: r.s.id, kind: kindSel.value }))));
+        toast('Marked as reminded'); await route();
+      }) }, '3. Mark as sent')),
+    h('p', { class: 'muted small' }, 'Tick students (or "Select matching": note = everyone; overview = incomplete snapshot; check-in = no note for 30+ days). Paste the emails into BCC in your mail app, paste the message, send, then click "Mark as sent".'));
 
   const clip = (v) => h('td', { class: 'clip', title: v || '' }, v || '–');
   const table = students.length ? h('div', { class: 'tablewrap' }, h('table', {},
@@ -336,18 +362,21 @@ async function adminDetail(studentId) {
         row('Moderator', t.moderator), row('Mediator', t.mediator), row('Other', t.other_variables),
         row('Help needed', t.status ? STATUS[t.status] : ''), row('Help note', t.status_note), row('Updated', fmtDate(t.updated_at)))),
       h('div', { class: 'row', style: 'margin-top:12px' }, kindSel,
-        h('button', { class: 'ghost', onclick: (e) => run(e.target, async () => { await sendReminders(kindSel.value, [s.id], ''); }) }, 'Send reminder'))),
+        h('button', { class: 'ghost', onclick: () => copy(reminderMessage(kindSel.value, [{ s, t }], '')) }, 'Copy reminder'),
+        h('button', { class: 'link', onclick: () => copy(s.email) }, 'Copy email'))),
     h('div', { class: 'card' }, h('h2', {}, 'Progress'), progressEditor(s.id, s.section_progress, reload)),
     h('div', { class: 'card' }, h('h2', {}, 'Meeting notes'),
       notes.length ? notes.map((n) => noteBlock(n, true, reload)) : h('p', { class: 'muted' }, 'No notes yet.')));
 }
 
-async function inviteStudents(ids) {
-  if (!ids.length) return toast('Nobody to invite');
+async function createLogins(ids) {
+  if (!ids.length) return toast('Nobody selected');
   const { data, error } = await sb.functions.invoke('invite', { body: { student_ids: ids } });
   if (error) throw new Error(await fnError(error));
-  const bad = (data.results || []).filter((r) => !r.ok);
-  toast(`Login emails sent: ${(data.results || []).length - bad.length}${bad.length ? `, failed ${bad.length}: ${bad[0].error}` : ''}`, bad.length > 0);
+  const res = data.results || [];
+  lastLogins = res.filter((r) => r.ok);
+  const bad = res.filter((r) => !r.ok);
+  toast(`Logins ready: ${lastLogins.length}${bad.length ? `, failed ${bad.length}: ${bad[0].name}: ${bad[0].error}` : ''}`, bad.length > 0);
 }
 
 function parseStudents(text) {
@@ -376,7 +405,16 @@ async function adminManage(intakes) {
       h('select', { name: 'defense', 'aria-label': 'Defense month', style: 'width:auto' }, h('option', {}, 'June'), h('option', {}, 'January')),
       h('input', { name: 'year', type: 'number', min: 2024, max: 2100, value: yr + 1, style: 'width:100px', 'aria-label': 'Year' }),
       h('button', { type: 'submit' }, 'Create intake')));
-  const cards = [h('div', { class: 'card' }, h('h2', {}, 'New intake'), newIntake)];
+  const cards = [];
+  if (lastLogins && lastLogins.length) {
+    const shown = lastLogins;
+    cards.push(h('div', { class: 'card' }, h('h2', {}, 'New passwords (shown once)'),
+      h('p', { class: 'muted small' }, 'Copy each message now and send it to the student. Passwords are not stored and disappear when you leave this page.'),
+      h('div', { class: 'tablewrap' }, h('table', {}, h('tbody', {}, shown.map((r) => h('tr', {}, h('td', {}, r.name), h('td', {}, r.email),
+        h('td', {}, h('code', {}, r.password)), h('td', {}, h('button', { class: 'ghost', onclick: () => copy(loginMessage(r)) }, 'Copy message'))))))),
+      h('p', {}, h('button', { class: 'ghost', onclick: () => { lastLogins = null; route(); } }, 'Done, hide passwords'))));
+  }
+  cards.push(h('div', { class: 'card' }, h('h2', {}, 'New intake'), newIntake));
   if (!selectedIntake) return cards;
 
   const intake = intakes.find((x) => x.id === selectedIntake);
@@ -392,15 +430,15 @@ async function adminManage(intakes) {
   const uninvited = students.filter((s) => !s.invited_at).map((s) => s.id);
   cards.push(h('div', { class: 'card' }, h('h2', {}, 'Students in ' + intake.label), ta, h('p', {}, addBtn),
     students.length ? h('div', { class: 'tablewrap' }, h('table', {},
-      h('thead', {}, h('tr', {}, ['Name', 'Email', 'Invited', ''].map((x) => h('th', {}, x)))),
+      h('thead', {}, h('tr', {}, ['Name', 'Email', 'Login created', ''].map((x) => h('th', {}, x)))),
       h('tbody', {}, students.map((s) => h('tr', {}, h('td', {}, s.name), h('td', {}, s.email), h('td', {}, fmtDate(s.invited_at)),
         h('td', {}, h('div', { class: 'row' },
-          h('button', { class: 'ghost', onclick: (e) => run(e.target, async () => { await inviteStudents([s.id]); await route(); }) }, s.invited_at ? 'Resend' : 'Invite'),
+          h('button', { class: 'ghost', onclick: (e) => run(e.target, async () => { if (s.invited_at && !confirm(`Set a new password for ${s.name}? The old one stops working.`)) return; await createLogins([s.id]); await route(); }) }, s.invited_at ? 'New password' : 'Create login'),
           h('button', { class: 'danger', onclick: (e) => run(e.target, async () => {
             if (!confirm(`Delete ${s.name} and all their data?`)) return;
             must(await sb.from('students').delete().eq('id', s.id)); await route();
           }) }, 'Delete')))))))) : null,
-    uninvited.length ? h('p', {}, h('button', { onclick: (e) => run(e.target, async () => { await inviteStudents(uninvited); await route(); }) }, `Invite all ${uninvited.length} not yet invited`)) : null));
+    uninvited.length ? h('p', {}, h('button', { onclick: (e) => run(e.target, async () => { await createLogins(uninvited); await route(); }) }, `Create logins for all ${uninvited.length} without one`)) : null));
   cards.push(h('div', { class: 'card' }, h('h2', {}, 'After the defenses'),
     h('p', { class: 'muted small' }, 'Deletes this intake, its students, theses and notes. This cannot be undone. Export the overview CSV first if you need it.'),
     h('button', { class: 'danger', onclick: (e) => run(e.target, async () => {
@@ -414,7 +452,7 @@ async function adminManage(intakes) {
 async function route() {
   try {
     const { data: { session } } = await sb.auth.getSession();
-    if (!session) return loginView();
+    if (!session) { lastLogins = null; return loginView(); }
     const email = session.user.email;
     const isAdmin = must(await sb.rpc('is_admin'));
     if (isAdmin) return await adminView(email);
