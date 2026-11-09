@@ -6,7 +6,7 @@ const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY, {
 });
 const app = document.getElementById('app');
 const STATUS = { on_track: 'No issues', stuck: 'Stuck', waiting_on_supervisor: 'Waiting on supervisor' };
-const SECTIONS = [['introduction', 'Introduction', 'I'], ['literature_review', 'Literature review', 'L'], ['methods', 'Methods', 'M'],
+const SECTIONS = [['proposal', 'Proposal', 'P'], ['introduction', 'Introduction', 'I'], ['literature_review', 'Literature review', 'L'], ['methods', 'Methods', 'M'],
   ['data_collection', 'Data collection', 'D'], ['results', 'Results', 'R'], ['general_discussion', 'General discussion', 'G']];
 const SSTATE = { not_started: 'Not started', in_progress: 'In progress', with_supervisor: 'Draft with supervisor', done: 'Done' };
 const REMINDERS = { note: 'Meeting note reminder', snapshot: 'Complete thesis overview', checkin: 'Check-in (no update)' };
@@ -453,6 +453,28 @@ async function adminManage(intakes) {
     }) }, 'Delete this intake and its data')));
   return cards;
 }
+
+
+// ---------- hover bubble for long table cells ----------
+(() => {
+  const tip = h('div', { id: 'tip', role: 'tooltip' });
+  document.body.append(tip);
+  const cellOf = (t) => (t.closest ? t.closest('td.clip') : null);
+  const show = (td) => {
+    const text = td.textContent;
+    if (!text || text === '–') return;
+    tip.textContent = text; tip.style.display = 'block';
+    const r = td.getBoundingClientRect(), w = tip.offsetWidth, hgt = tip.offsetHeight;
+    let top = r.bottom + 6; if (top + hgt > window.innerHeight - 8) top = Math.max(8, r.top - hgt - 6);
+    tip.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+    tip.style.top = top + 'px';
+  };
+  const hide = () => { tip.style.display = 'none'; };
+  document.addEventListener('mouseover', (e) => { const td = cellOf(e.target); if (td) show(td); else hide(); });
+  document.addEventListener('focusin', (e) => { const td = cellOf(e.target); if (td) show(td); });
+  document.addEventListener('focusout', hide);
+  window.addEventListener('scroll', hide, true);
+})();
 
 // ---------- routing ----------
 async function route() {
