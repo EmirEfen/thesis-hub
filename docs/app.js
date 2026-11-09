@@ -336,7 +336,7 @@ async function adminOverview(intakeId) {
       box.dataset.id = r.s.id; boxes.push(box);
       const lr = lastRem[r.s.id];
       return h('tr', {}, h('td', {}, box),
-        h('td', {}, h('button', { class: 'link', onclick: () => adminDetail(r.s.id) }, r.s.name)),
+        h('td', { class: 'clip name' }, h('button', { class: 'link', onclick: () => adminDetail(r.s.id) }, r.s.name)),
         clip(r.t.specialization, 'spec'), clip(r.t.snapshot, 'wide'), clip(r.t.iv), clip(r.t.dv), clip(r.t.moderator), clip(r.t.mediator),
         h('td', { class: 'nowrap' }, progressCells(r.s)),
         h('td', {}, r.t.status && r.t.status !== 'on_track' ? h('span', { class: 'pill ' + r.t.status }, STATUS[r.t.status]) : '–'),
